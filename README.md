@@ -3,11 +3,11 @@
 Um bot de música para o [Gamerfy](https://gamerfy.gg): alguém escreve
 `/play numb - linkin park` num canal, o bot busca no YouTube, entra na sala de
 voz de quem pediu e toca. Fila por servidor, com `/skip`, `/stop`, `/queue` e
-`/nowplaying`.
+`/nowplaying`. Também serve uma landing page com o link para adicionar o bot.
 
 É um consumidor do SDK público [`@gamerfy/bot`](https://www.npmjs.com/package/@gamerfy/bot):
-lê mensagens, resolve a busca com o `yt-dlp` e publica o áudio na sala pelo
-`voice.play()` do SDK (que roda o `ffmpeg` local para transcodificar para Opus).
+lê mensagens, resolve a busca com o `yt-dlp`, transcodifica com o `ffmpeg` para
+Ogg Opus e publica na sala pelo `voice.play()` do SDK.
 
 ## Comandos
 
@@ -23,59 +23,74 @@ Por prefixo (padrão `/`, veja `MUSIC_PREFIX`):
 
 ## Permissões do bot
 
-No servidor onde for instalado, o cargo do bot precisa de: **Ver canais**,
-**Ler mensagens** (para ler `/play …`), **Enviar mensagens**, **Conectar** e
-**Falar**.
+O cargo do bot precisa de: **Ver canais**, **Ler mensagens** (para ler
+`/play …`), **Enviar mensagens**, **Conectar** e **Falar**.
+
+## Landing page
+
+O bot sobe um servidor HTTP na `PORT` (padrão 80) com uma página que explica o
+bot e traz o botão **Adicionar ao Gamerfy** (aponta para `MUSIC_INSTALL_URL`), e
+um `GET /health` que responde `ok` (para o health check do container).
 
 ## Variáveis de ambiente
 
 | Variável | Padrão | O que é |
 | --- | --- | --- |
-| `GAMERFY_BOT_TOKEN` | — (obrigatória) | O token do bot (painel de desenvolvedor do Gamerfy, começa com `gfb_`). |
+| `GAMERFY_BOT_TOKEN` | — (obrigatória) | O token do bot (painel de desenvolvedor, começa com `gfb_`). |
 | `GAMERFY_API_URL` | `https://api.gamerfy.gg` | O backend público. |
 | `MUSIC_PREFIX` | `/` | O prefixo dos comandos. |
 | `MUSIC_MAX_QUEUE` | `100` | Tamanho máximo da fila por servidor. |
-| `YTDLP_PATH` | `yt-dlp` | Caminho do `yt-dlp`, se não estiver no PATH. |
+| `PORT` | `80` | A porta da landing page / health. |
+| `MUSIC_INSTALL_URL` | — | O link `https://gamerfy.gg/bot/<clientId>` (do painel de desenvolvedor). Sem ele, a página não mostra o botão. |
+| `YTDLP_PATH` | `yt-dlp` | Caminho do `yt-dlp`. |
+| `FFMPEG_PATH` | `ffmpeg` | Caminho do `ffmpeg`. |
 
-Veja `.env.example`. O `ffmpeg` também precisa estar no PATH (o SDK o usa).
+Veja `.env.example`.
 
 ## Rodar localmente
 
-Precisa de Node ≥ 22, `yt-dlp` e `ffmpeg` instalados.
+Precisa de Node ≥ 22, `yt-dlp` e `ffmpeg` no PATH.
 
 ```sh
 npm install
 cp .env.example .env   # preencha GAMERFY_BOT_TOKEN
 npm run build
-GAMERFY_BOT_TOKEN=gfb_... node dist/index.js
+GAMERFY_BOT_TOKEN=gfb_... PORT=8080 node dist/index.js
 # ou, em desenvolvimento:
-GAMERFY_BOT_TOKEN=gfb_... npm run dev
+GAMERFY_BOT_TOKEN=gfb_... PORT=8080 npm run dev
 ```
 
 ## Deploy no Bunny Magic Containers
 
-A imagem já traz `ffmpeg` e `yt-dlp`:
+O Bunny Magic Containers roda uma **imagem** de um registro (Docker Hub ou GHCR;
+públicos direto, privados por integração) e só aceita `linux/amd64`.
 
-```sh
-docker build -t gamerfy-music-bot .
-```
+1. **Build para amd64 e envie a imagem** para um registro. Ex.: GitHub Container
+   Registry (GHCR):
 
-Suba essa imagem no Bunny Magic Containers e defina `GAMERFY_BOT_TOKEN` (e as
-outras variáveis, se quiser) como variáveis de ambiente do container — nunca no
-build. Num datacenter há UDP de saída, então o bot entra na voz por `direct` e
-não depende do relay TURN/TLS.
+   ```sh
+   echo "$GHCR_TOKEN" | docker login ghcr.io -u <seu-usuario> --password-stdin
+   docker buildx build --platform linux/amd64 \
+     -t ghcr.io/<seu-usuario>/gamerfy-music-bot:latest --push .
+   ```
 
-## O SDK, por enquanto, vem de um tarball
+2. **No painel do Bunny** (Magic Containers → **Add App**): escolha a imagem
+   `ghcr.io/<seu-usuario>/gamerfy-music-bot:latest` (se o pacote for privado no
+   GHCR, conecte o registro com **+ Add Registry**).
 
-Enquanto o `@gamerfy/bot@0.2.0` não está publicado no npm, a dependência aponta
-para o tarball em `vendor/gamerfy-bot-0.2.0.tgz` (gerado com `npm pack` no SDK).
-Assim que o `0.2.0` estiver no npm, troque em `package.json`:
+3. **Variáveis de ambiente:** em *Environment variables*, adicione
+   `GAMERFY_BOT_TOKEN` e, se quiser, `MUSIC_INSTALL_URL`, `MUSIC_PREFIX` etc.
+   Nunca coloque o token no `Dockerfile`.
 
-```json
-"@gamerfy/bot": "^0.2.0"
-```
+4. **Endpoint:** na aba *Endpoints*, aponte um endpoint para a porta **80** do
+   container (é onde a landing page e o `/health` respondem).
 
-e apague `vendor/`.
+5. **Deploy:** *Single region* é o mais previsível para um bot sempre no ar (o
+   *Magic* escala por atividade, que um bot que só faz conexões de saída quase
+   não gera). Clique em **Deploy**.
+
+Num datacenter há UDP de saída, então o bot entra na voz por `direct` e não
+depende do relay TURN/TLS.
 
 ## Nota sobre o YouTube
 

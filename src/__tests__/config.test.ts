@@ -9,6 +9,9 @@ describe('loadConfig', () => {
       prefix: '/',
       maxQueue: 100,
       ytdlpPath: 'yt-dlp',
+      ffmpegPath: 'ffmpeg',
+      port: 80,
+      installUrl: null,
     });
   });
 
@@ -27,6 +30,12 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ GAMERFY_BOT_TOKEN: 'gfb_x', MUSIC_PREFIX: '' })).toThrow(/MUSIC_PREFIX/);
   });
 
+  it('rejects an invalid port', () => {
+    expect(() => loadConfig({ GAMERFY_BOT_TOKEN: 'gfb_x', PORT: '0' })).toThrow(/PORT/);
+    expect(() => loadConfig({ GAMERFY_BOT_TOKEN: 'gfb_x', PORT: '70000' })).toThrow(/PORT/);
+    expect(() => loadConfig({ GAMERFY_BOT_TOKEN: 'gfb_x', PORT: 'abc' })).toThrow(/PORT/);
+  });
+
   it('takes the overrides', () => {
     const config = loadConfig({
       GAMERFY_BOT_TOKEN: 'gfb_x',
@@ -34,10 +43,20 @@ describe('loadConfig', () => {
       MUSIC_PREFIX: '!',
       MUSIC_MAX_QUEUE: '5',
       YTDLP_PATH: '/usr/bin/yt-dlp',
+      FFMPEG_PATH: '/usr/bin/ffmpeg',
+      PORT: '8080',
+      MUSIC_INSTALL_URL: 'https://gamerfy.gg/bot/abc123',
     });
     expect(config.apiUrl).toBe('http://127.0.0.1:4502/api/public');
     expect(config.prefix).toBe('!');
     expect(config.maxQueue).toBe(5);
     expect(config.ytdlpPath).toBe('/usr/bin/yt-dlp');
+    expect(config.ffmpegPath).toBe('/usr/bin/ffmpeg');
+    expect(config.port).toBe(8080);
+    expect(config.installUrl).toBe('https://gamerfy.gg/bot/abc123');
+  });
+
+  it('treats a blank install URL as null', () => {
+    expect(loadConfig({ GAMERFY_BOT_TOKEN: 'gfb_x', MUSIC_INSTALL_URL: '   ' }).installUrl).toBeNull();
   });
 });

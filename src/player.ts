@@ -51,7 +51,11 @@ export class GuildPlayer {
   #connection: Connection | null = null;
   #running = false;
   #stopping = false;
-  /** Where auto-advance announcements go — the last channel a command came from. */
+  /** Set by skip(); the loop drops the current/next track and clears it. */
+  #skipRequested = false;
+  /** The last room joined, to resume if a track is queued during tear-down. */
+  #lastVoiceChannelId: string | null = null;
+  /** Where announcements go — the last channel a command came from. */
   #announceChannelId: string | null = null;
 
   constructor(
@@ -61,6 +65,10 @@ export class GuildPlayer {
 
   get isRunning(): boolean {
     return this.#running;
+  }
+
+  #atCapacity(): boolean {
+    return this.#queue.length + (this.#current === null ? 0 : 1) >= this.deps.maxQueue;
   }
 
   async play(query: string, requester: Requester, channelId: string): Promise<void> {
@@ -74,7 +82,7 @@ export class GuildPlayer {
       await this.deps.say(channelId, 'Entre numa sala de voz primeiro.');
       return;
     }
-    if (this.#queue.length + (this.#current === null ? 0 : 1) >= this.deps.maxQueue) {
+    if (this.#atCapacity()) {
       await this.deps.say(channelId, `A fila está cheia (limite de ${String(this.deps.maxQueue)}).`);
       return;
     }
@@ -87,13 +95,19 @@ export class GuildPlayer {
       return;
     }
 
+    // Re-check after the await: concurrent /play calls could have filled it.
+    if (this.#atCapacity()) {
+      await this.deps.say(channelId, `A fila está cheia (limite de ${String(this.deps.maxQueue)}).`);
+      return;
+    }
+
     this.#queue.push(track);
     if (this.#running) {
       await this.deps.say(channelId, `Na fila (posição ${String(this.#queue.length)}): ${label(track)}`);
       return;
     }
-    // Not running: we start the loop. It announces "Tocando agora" once it is in
-    // the room. `void`: play() returns now; the loop owns the rest.
+    // Not running: start the loop. It announces "Tocando agora" once in the
+    // room. `void`: play() returns now; the loop owns the rest.
     void this.#run(voiceChannelId);
   }
 
@@ -101,6 +115,7 @@ export class GuildPlayer {
     this.#announceChannelId = channelId;
     if (this.#current === null) return this.deps.say(channelId, 'Não há nada tocando.');
     const skipped = this.#current;
+    this.#skipRequested = true; // caught by the loop even if play() has not started yet
     this.#connection?.stop(); // ends the awaited play(); the loop advances
     return this.deps.say(channelId, `Pulei ${label(skipped)}.`);
   }
@@ -131,45 +146,64 @@ export class GuildPlayer {
   }
 
   async #run(voiceChannelId: string): Promise<void> {
+    if (this.#running) return; // never two loops (never two joins) for one guild
     this.#running = true;
     this.#stopping = false;
-    const announceChannelId = this.#announceChannelId;
+    this.#skipRequested = false;
+    this.#lastVoiceChannelId = voiceChannelId;
 
     try {
       this.#connection = await this.deps.join(voiceChannelId);
     } catch (error) {
       this.#running = false;
       this.#queue.length = 0;
-      if (announceChannelId !== null) await this.deps.say(announceChannelId, `Não consegui entrar na sala: ${reason(error)}`);
+      if (this.#announceChannelId !== null) await this.deps.say(this.#announceChannelId, `Não consegui entrar na sala: ${reason(error)}`);
       return;
     }
 
-    while (this.#queue.length > 0 && !this.#stopping) {
-      const track = this.#queue.shift() as Track;
-      this.#current = track;
-      const channelId = this.#announceChannelId ?? announceChannelId;
-      if (channelId !== null) await this.deps.say(channelId, `Tocando agora: ${label(track)}`);
-
-      try {
-        await this.#connection.play(this.deps.resolver.open(track));
-      } catch (error) {
-        if (isMissingPermission(error)) {
-          this.#stopping = true;
-          if (channelId !== null) await this.deps.say(channelId, 'Não tenho permissão de falar nessa sala. Saí.');
-        } else if (channelId !== null) {
-          await this.deps.say(channelId, `Pulei ${label(track)}: ${reason(error)}`);
+    try {
+      while (this.#queue.length > 0 && !this.#stopping) {
+        const track = this.#queue.shift() as Track;
+        this.#current = track;
+        if (this.#skipRequested) {
+          this.#skipRequested = false; // a skip landed before this track started
+          this.#current = null;
+          continue;
         }
+        const channelId = this.#announceChannelId;
+        if (channelId !== null) await this.deps.say(channelId, `Tocando agora: ${label(track)}`);
+        if (this.#skipRequested) {
+          this.#skipRequested = false; // …or during that announce
+          this.#current = null;
+          continue;
+        }
+
+        try {
+          await this.#connection.play(this.deps.resolver.open(track));
+        } catch (error) {
+          if (isMissingPermission(error)) {
+            this.#stopping = true;
+            if (channelId !== null) await this.deps.say(channelId, 'Não tenho permissão de falar nessa sala. Saí.');
+          } else if (channelId !== null) {
+            await this.deps.say(channelId, `Pulei ${label(track)}: ${reason(error)}`);
+          }
+        }
+        this.#skipRequested = false; // consume a skip that ended this track
+        this.#current = null;
       }
+    } finally {
+      const connection = this.#connection;
+      const stopping = this.#stopping;
+      this.#connection = null;
       this.#current = null;
+      // #running stays true across leave(), so no second #run (double join) can
+      // start while this one is hanging up.
+      await connection?.leave().catch(() => undefined);
+      this.#running = false;
+
+      if (!stopping && this.#announceChannelId !== null) await this.deps.say(this.#announceChannelId, 'A fila acabou. Saí da sala.');
+      // A track queued during the tear-down above would be orphaned: pick it up.
+      if (!this.#stopping && this.#queue.length > 0 && this.#lastVoiceChannelId !== null) void this.#run(this.#lastVoiceChannelId);
     }
-
-    const connection = this.#connection;
-    this.#connection = null;
-    this.#running = false;
-    this.#current = null;
-    await connection?.leave().catch(() => undefined);
-
-    const channelId = this.#announceChannelId ?? announceChannelId;
-    if (!this.#stopping && channelId !== null) await this.deps.say(channelId, 'A fila acabou. Saí da sala.');
   }
 }

@@ -1,15 +1,17 @@
 // Wires the Gamerfy bot to the music player: read a `/play …` line, resolve it
 // with yt-dlp, join the asker's room and play; `/skip`, `/stop`, `/queue`, `/np`.
+// Also serves a landing page (and /health) so people can add the bot.
 import { Bot } from '@gamerfy/bot';
 import { parseCommand } from './commands.js';
 import { loadConfig } from './config.js';
 import { GuildPlayer } from './player.js';
 import { Players } from './players.js';
 import { YtDlpResolver } from './resolver.js';
+import { createWebServer } from './web.js';
 
 const config = loadConfig();
 const bot = new Bot({ token: config.token, apiUrl: config.apiUrl });
-const resolver = new YtDlpResolver({ ytdlpPath: config.ytdlpPath });
+const resolver = new YtDlpResolver({ ytdlpPath: config.ytdlpPath, ffmpegPath: config.ffmpegPath });
 
 async function say(channelId: string, text: string): Promise<void> {
   try {
@@ -60,12 +62,20 @@ bot.on('message', async (message) => {
 
 bot.on('error', (error) => console.error('[music]', error.message));
 
+const web = createWebServer({
+  botName: () => bot.user?.username ?? null,
+  installUrl: config.installUrl,
+  prefix: config.prefix,
+});
+web.listen(config.port, () => console.log(`[music] página no ar na porta ${String(config.port)}`));
+
 await bot.connect();
 console.log(`[music] no ar como ${bot.user?.username ?? 'bot'}`);
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
     console.log(`[music] ${signal}: saindo…`);
+    web.close();
     void bot.destroy().then(() => process.exit(0));
   });
 }

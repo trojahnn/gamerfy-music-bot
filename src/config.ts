@@ -12,11 +12,23 @@ export interface Config {
   maxQueue: number;
   /** The `yt-dlp` binary (a name on PATH or an absolute path). */
   ytdlpPath: string;
+  /** The `ffmpeg` binary (a name on PATH or an absolute path). */
+  ffmpegPath: string;
+  /** The port the landing page / health endpoint listens on. */
+  port: number;
+  /** The Gamerfy install link (`${site}/bot/<clientId>`), or `null` if unset. */
+  installUrl: string | null;
 }
 
 function requireNonEmpty(value: string | undefined, name: string, hint: string): string {
   if (value === undefined || value === '') throw new Error(`Defina ${name}: ${hint}`);
   return value;
+}
+
+function parsePort(raw: string): number {
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`PORT precisa ser uma porta válida 1..65535 (veio ${JSON.stringify(raw)}).`);
+  return port;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -29,11 +41,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const prefix = env.MUSIC_PREFIX ?? '/';
   if (prefix === '') throw new Error('MUSIC_PREFIX não pode ser vazio.');
 
+  const installUrl = (env.MUSIC_INSTALL_URL ?? '').trim();
+
   return {
     token,
     apiUrl: env.GAMERFY_API_URL ?? 'https://api.gamerfy.gg',
     prefix,
     maxQueue,
     ytdlpPath: env.YTDLP_PATH ?? 'yt-dlp',
+    ffmpegPath: env.FFMPEG_PATH ?? 'ffmpeg',
+    port: parsePort(env.PORT ?? '80'),
+    installUrl: installUrl === '' ? null : installUrl,
   };
 }
