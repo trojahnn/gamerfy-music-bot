@@ -14,6 +14,8 @@ export interface Config {
   ytdlpPath: string;
   /** The `ffmpeg` binary (a name on PATH or an absolute path). */
   ffmpegPath: string;
+  /** Extra yt-dlp args (e.g. cookies, a PO token) for YouTube's anti-bot. */
+  ytdlpExtraArgs: string[];
   /** The port the landing page / health endpoint listens on. */
   port: number;
   /** The Gamerfy install link (`${site}/bot/<clientId>`), or `null` if unset. */
@@ -50,6 +52,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxQueue,
     ytdlpPath: env.YTDLP_PATH ?? 'yt-dlp',
     ffmpegPath: env.FFMPEG_PATH ?? 'ffmpeg',
+    ytdlpExtraArgs: (env.YTDLP_EXTRA_ARGS ?? '').split(/\s+/).filter((arg) => arg !== ''),
     port: parsePort(env.PORT ?? '80'),
     installUrl: installUrl === '' ? null : installUrl,
   };

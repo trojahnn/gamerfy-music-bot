@@ -42,6 +42,7 @@ um `GET /health` que responde `ok` (para o health check do container).
 | `MUSIC_MAX_QUEUE` | `100` | Tamanho máximo da fila por servidor. |
 | `PORT` | `80` | A porta da landing page / health. |
 | `MUSIC_INSTALL_URL` | — | O link `https://gamerfy.gg/bot/<clientId>` (do painel de desenvolvedor). Sem ele, a página não mostra o botão. |
+| `YTDLP_EXTRA_ARGS` | — | Args extras do `yt-dlp` (ex.: `--cookies /caminho`, um PO token) para o anti-bot do YouTube. |
 | `YTDLP_PATH` | `yt-dlp` | Caminho do `yt-dlp`. |
 | `FFMPEG_PATH` | `ffmpeg` | Caminho do `ffmpeg`. |
 
@@ -91,6 +92,13 @@ públicos direto, privados por integração) e só aceita `linux/amd64`.
 
 Num datacenter há UDP de saída, então o bot entra na voz por `direct` e não
 depende do relay TURN/TLS.
+
+## O YouTube na prática
+
+Duas realidades do anti-bot do YouTube, importantes para operar:
+
+- **O `yt-dlp` precisa estar atual.** O YouTube muda e quebra versões antigas com `HTTP 403` no download. A imagem baixa o `yt-dlp` **mais recente** no build; reconstrua a imagem de tempos em tempos.
+- **A busca demora.** Resolver uma busca faz um handshake anti-bot e leva ~20-30 s por `/play` (o download em si é rápido depois). Se o IP do datacenter for bloqueado, use `YTDLP_EXTRA_ARGS` para passar `--cookies` ou um PO token.
 
 ## Nota sobre o YouTube
 

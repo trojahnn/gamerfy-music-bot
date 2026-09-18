@@ -36,8 +36,9 @@ export interface ResolverChild {
 export type SpawnFn = (command: string, args: readonly string[]) => ResolverChild;
 
 const SEARCH_PREFIX = 'ytsearch1:';
-/** yt-dlp resolving metadata should be quick; a hung one is killed after this. */
-export const RESOLVE_TIMEOUT_MS = 20_000;
+/** yt-dlp's YouTube search does an anti-bot handshake that takes ~20-30 s; a
+ * truly hung one is killed after this generous ceiling. */
+export const RESOLVE_TIMEOUT_MS = 60_000;
 
 export function isUrl(text: string): boolean {
   return /^https?:\/\//i.test(text.trim());
@@ -60,21 +61,25 @@ const defaultSpawn: SpawnFn = (command, args) => spawn(command, [...args], { std
 export class YtDlpResolver implements Resolver {
   readonly #ytdlp: string;
   readonly #ffmpeg: string;
+  readonly #extra: readonly string[];
   readonly #spawn: SpawnFn;
 
-  constructor(options: { ytdlpPath?: string; ffmpegPath?: string; spawn?: SpawnFn } = {}) {
+  constructor(options: { ytdlpPath?: string; ffmpegPath?: string; extraArgs?: readonly string[]; spawn?: SpawnFn } = {}) {
     this.#ytdlp = options.ytdlpPath ?? 'yt-dlp';
     this.#ffmpeg = options.ffmpegPath ?? 'ffmpeg';
+    // Operator escape hatch for YouTube's anti-bot (e.g. --cookies, a PO token),
+    // so a blocked datacenter IP can be worked around without a rebuild.
+    this.#extra = options.extraArgs ?? [];
     this.#spawn = options.spawn ?? defaultSpawn;
   }
 
   buildResolveArgs(query: string): string[] {
     const target = isUrl(query) ? query.trim() : `${SEARCH_PREFIX}${query.trim()}`;
-    return ['--no-playlist', '--skip-download', '--print', '%(title)s\t%(duration)s\t%(webpage_url)s', target];
+    return ['--no-playlist', ...this.#extra, '--skip-download', '--print', '%(title)s\t%(duration)s\t%(webpage_url)s', target];
   }
 
   buildYtdlpArgs(url: string): string[] {
-    return ['--no-playlist', '-f', 'bestaudio', '-o', '-', url];
+    return ['--no-playlist', ...this.#extra, '-f', 'bestaudio', '-o', '-', url];
   }
 
   buildFfmpegArgs(): string[] {

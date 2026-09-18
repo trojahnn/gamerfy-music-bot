@@ -10,6 +10,7 @@ describe('loadConfig', () => {
       maxQueue: 100,
       ytdlpPath: 'yt-dlp',
       ffmpegPath: 'ffmpeg',
+      ytdlpExtraArgs: [],
       port: 80,
       installUrl: null,
     });
@@ -58,5 +59,10 @@ describe('loadConfig', () => {
 
   it('treats a blank install URL as null', () => {
     expect(loadConfig({ GAMERFY_BOT_TOKEN: 'gfb_x', MUSIC_INSTALL_URL: '   ' }).installUrl).toBeNull();
+  });
+
+  it('splits extra yt-dlp args on whitespace', () => {
+    expect(loadConfig({ GAMERFY_BOT_TOKEN: 'gfb_x', YTDLP_EXTRA_ARGS: '--cookies /tmp/c.txt' }).ytdlpExtraArgs).toEqual(['--cookies', '/tmp/c.txt']);
+    expect(loadConfig({ GAMERFY_BOT_TOKEN: 'gfb_x' }).ytdlpExtraArgs).toEqual([]);
   });
 });

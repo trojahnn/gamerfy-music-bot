@@ -58,6 +58,12 @@ describe('YtDlpResolver arg building', () => {
     expect(ff.join(' ')).toContain('-f ogg');
     expect(ff).toContain('pipe:1');
   });
+
+  it('threads extra yt-dlp args into both commands', () => {
+    const tuned = new YtDlpResolver({ extraArgs: ['--cookies', '/c.txt'] });
+    expect(tuned.buildResolveArgs('x').join(' ')).toContain('--cookies /c.txt');
+    expect(tuned.buildYtdlpArgs('https://y/x').join(' ')).toContain('--cookies /c.txt');
+  });
 });
 
 describe('YtDlpResolver.resolve', () => {

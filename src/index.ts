@@ -11,7 +11,7 @@ import { createWebServer } from './web.js';
 
 const config = loadConfig();
 const bot = new Bot({ token: config.token, apiUrl: config.apiUrl });
-const resolver = new YtDlpResolver({ ytdlpPath: config.ytdlpPath, ffmpegPath: config.ffmpegPath });
+const resolver = new YtDlpResolver({ ytdlpPath: config.ytdlpPath, ffmpegPath: config.ffmpegPath, extraArgs: config.ytdlpExtraArgs });
 
 async function say(channelId: string, text: string): Promise<void> {
   try {
