@@ -69,6 +69,18 @@ const web = createWebServer({
 });
 web.listen(config.port, () => console.log(`[music] página no ar na porta ${String(config.port)}`));
 
+// A fatal gateway close does not reconnect (REPLACED by another connection of
+// the same token, a rotated/invalid token, a retired bot). The SDK stops, but
+// this process would stay alive on its web server — deaf to commands, and with
+// a voice-state cache that never refreshes. Exit so the container restarts
+// clean: a fresh `ready` re-reads every guild's current voice state.
+bot.on('disconnect', (event) => {
+  if (event.willReconnect) return;
+  console.error(`[music] o gateway fechou de vez (code ${String(event.code)}); saindo para o container reiniciar limpo`);
+  web.close();
+  void bot.destroy().finally(() => process.exit(1));
+});
+
 await bot.connect();
 console.log(`[music] no ar como ${bot.user?.username ?? 'bot'}`);
 
