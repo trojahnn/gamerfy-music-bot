@@ -78,10 +78,10 @@ describe('GuildPlayer', () => {
     expect(has(said, 'A fila acabou')).toBe(true);
   });
 
-  it('refuses to play when the asker is in no voice channel', async () => {
+  it('refuses to play when the asker is in no voice channel the bot can see, and says which it is', async () => {
     const { player, said, deps } = make({ voiceChannelId: null });
     await player.play('x', ana, 'tc1');
-    expect(has(said, 'Entre numa sala de voz primeiro.')).toBe(true);
+    expect(has(said, 'Não te encontrei em nenhuma sala de voz que eu consiga ver. Entre numa sala (ou peça para liberarem a sala ao bot) e tente de novo.')).toBe(true);
     expect(deps.join).not.toHaveBeenCalled();
   });
 

@@ -23,7 +23,7 @@ as confere (antes de resolver a faixa — ninguém espera o YouTube para ouvir u
 
 | Situação | Resposta |
 | --- | --- |
-| Quem pediu não está em sala de voz nenhuma | `Entre numa sala de voz primeiro.` |
+| Quem pediu não está em sala de voz nenhuma **que o bot enxergue** | `Não te encontrei em nenhuma sala de voz que eu consiga ver. Entre numa sala (ou peça para liberarem a sala ao bot) e tente de novo.` — uma sala privada em que o bot não foi liberado (pela lista de membros da sala ou pelo cargo Bot) é, para ele, sala nenhuma. |
 | O bot já toca em **outra** sala do servidor | `Estou ocupado tocando em #<sala>.` — e fica onde está (uma sala por servidor; peça de lá, ou `/stop`). |
 | O bot já toca na **mesma** sala | `Na fila (posição N): …` |
 | Livre | entra na sala de quem pediu e `Tocando agora: …` |
@@ -147,4 +147,8 @@ container que morria aí, esgotava as reinicializações da plataforma e ficava 
 depois de o backend voltar. Só uma recusa sem volta encerra o processo: token
 inválido/rotacionado, bot aposentado, ou **outra conexão do mesmo token** (4004) —
 nunca rode duas cópias com o mesmo token. Depois de conectado, o SDK reconecta e
-retoma a sessão sozinho (1001 do deploy, 1006 de rede).
+retoma a sessão sozinho (1001 do deploy, 1006 de rede; 4900/4901/4902 quando o próprio
+SDK abandona uma conexão morta — sem `heartbeat_ack`, sem `hello`, sem `ready`). Cada
+queda vai para o log do container (`o gateway caiu (code N); reconectando`), e a volta
+também (`sessão retomada` ou `ready como …`): é por essas linhas que se lê o que
+aconteceu com um bot que apareceu offline.

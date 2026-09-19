@@ -104,7 +104,11 @@ export class GuildPlayer {
     }
     const voiceChannelId = await this.deps.voiceChannelOf(requester.id);
     if (voiceChannelId === null) {
-      await this.deps.say(channelId, 'Entre numa sala de voz primeiro.');
+      // "None" is the bot's own horizon, not the asker's: the server lists only
+      // the rooms the bot may see, so somebody sitting in a private room the
+      // bot was kept out of reads as being in none. The answer says so, instead
+      // of telling a person in a room to enter one (19/09).
+      await this.deps.say(channelId, 'Não te encontrei em nenhuma sala de voz que eu consiga ver. Entre numa sala (ou peça para liberarem a sala ao bot) e tente de novo.');
       return;
     }
     const busyIn = this.currentVoiceChannelId;

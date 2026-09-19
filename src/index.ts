@@ -101,11 +101,21 @@ let shuttingDown = false;
 bot.on('disconnect', (event) => {
   // Our own `destroy()` on SIGTERM closes with 1000 and no reconnect: that is
   // the program leaving, not the gateway giving up on it.
-  if (event.willReconnect || shuttingDown) return;
+  if (shuttingDown) return;
+  if (event.willReconnect) {
+    // One line per drop, with the code: the story of a bot that "went offline"
+    // starts here (4900/4901/4902 are the SDK giving up on a dead connection;
+    // 1001 a deploy; 1006 the network). Silent, a container's log said nothing
+    // about a quarter of an hour offline (19/09).
+    console.error(`[music] o gateway caiu (code ${String(event.code)}); reconectando`);
+    return;
+  }
   console.error(`[music] o gateway fechou de vez (code ${String(event.code)}); saindo para o container reiniciar limpo`);
   web.close();
   void bot.destroy().finally(() => process.exit(1));
 });
+bot.on('resumed', (event) => console.log(`[music] sessão retomada (${String(event.replayed)} evento(s) repostos)`));
+bot.on('ready', (user) => console.log(`[music] ready como ${user.username} em ${String(bot.guilds.size)} servidor(es)`));
 
 // Kept trying until the gateway answers — a deploy's maintenance window must
 // not turn into a crash loop (startup.ts). Only a refusal with no way back exits.
