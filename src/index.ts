@@ -97,8 +97,11 @@ web.listen(config.port, () => console.log(`[music] página no ar na porta ${Stri
 // this process would stay alive on its web server — deaf to commands, and with
 // a voice-state cache that never refreshes. Exit so the container restarts
 // clean: a fresh `ready` re-reads every guild's current voice state.
+let shuttingDown = false;
 bot.on('disconnect', (event) => {
-  if (event.willReconnect) return;
+  // Our own `destroy()` on SIGTERM closes with 1000 and no reconnect: that is
+  // the program leaving, not the gateway giving up on it.
+  if (event.willReconnect || shuttingDown) return;
   console.error(`[music] o gateway fechou de vez (code ${String(event.code)}); saindo para o container reiniciar limpo`);
   web.close();
   void bot.destroy().finally(() => process.exit(1));
@@ -117,6 +120,7 @@ console.log(`[music] no ar como ${bot.user?.username ?? 'bot'}`);
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
+    shuttingDown = true;
     console.log(`[music] ${signal}: saindo…`);
     web.close();
     void bot.destroy().then(() => process.exit(0));
