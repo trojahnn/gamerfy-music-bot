@@ -28,7 +28,7 @@ class FakeConnection implements Connection {
   }
 }
 
-function make(overrides: { voiceChannelId?: string | null; resolve?: Resolver['resolve']; maxQueue?: number; joinError?: Error } = {}) {
+function make(overrides: { voiceChannelId?: string | null; resolve?: Resolver['resolve']; maxQueue?: number; joinError?: Error; roomNames?: Record<string, string> } = {}) {
   const said: string[] = [];
   const connection = new FakeConnection();
   const resolve: Resolver['resolve'] =
@@ -43,7 +43,9 @@ function make(overrides: { voiceChannelId?: string | null; resolve?: Resolver['r
     resolver,
     maxQueue: overrides.maxQueue ?? 3,
     join,
-    voiceChannelOf: vi.fn(() => (overrides.voiceChannelId === undefined ? 'vc1' : overrides.voiceChannelId)),
+    // Async on purpose: index.ts reads the cache and then the server (`fetchGuild`).
+    voiceChannelOf: vi.fn(async () => (overrides.voiceChannelId === undefined ? 'vc1' : overrides.voiceChannelId)),
+    roomNameOf: vi.fn((channelId: string) => overrides.roomNames?.[channelId] ?? null),
     say: vi.fn(async (_channelId: string, text: string) => {
       said.push(text);
     }),
@@ -81,6 +83,47 @@ describe('GuildPlayer', () => {
     await player.play('x', ana, 'tc1');
     expect(has(said, 'Entre numa sala de voz primeiro.')).toBe(true);
     expect(deps.join).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The owner's rule (18/09): a `/play` is accepted from ANY text channel and
+   * plays in the ASKER's room; while the bot plays in another room of the
+   * guild it says so and stays put — it never hops rooms or resolves the track.
+   */
+  it('while playing in another room it answers "ocupado em #sala" and stays; same room queues', async () => {
+    const { player, connection, said, deps } = make({ roomNames: { vc1: 'PUBG1' } });
+    await player.play('a', ana, 'tc1');
+    await vi.waitFor(() => expect(connection.playCalls).toBe(1));
+    expect(player.currentVoiceChannelId).toBe('vc1');
+
+    // Somebody in ANOTHER room (vc2) asks from another text channel.
+    (deps.voiceChannelOf as ReturnType<typeof vi.fn>).mockResolvedValueOnce('vc2');
+    await player.play('b', { id: 'u2', username: 'bia' }, 'tc9');
+    expect(said.at(-1)).toBe('Estou ocupado tocando em #PUBG1.');
+    expect(deps.join).toHaveBeenCalledTimes(1);
+    expect(deps.resolver.resolve).toHaveBeenCalledTimes(1); // nobody waited on yt-dlp to be told no
+
+    // Somebody in the SAME room queues.
+    await player.play('c', { id: 'u3', username: 'caio' }, 'tc9');
+    expect(has(said, 'Na fila (posição 1)')).toBe(true);
+  });
+
+  it('names no room it does not know: "ocupado tocando em outra sala"', async () => {
+    const { player, connection, said, deps } = make();
+    await player.play('a', ana, 'tc1');
+    await vi.waitFor(() => expect(connection.playCalls).toBe(1));
+    (deps.voiceChannelOf as ReturnType<typeof vi.fn>).mockResolvedValueOnce('vc2');
+    await player.play('b', ana, 'tc1');
+    expect(said.at(-1)).toBe('Estou ocupado tocando em outra sala.');
+  });
+
+  it('the asker\'s room is read AFTER the command, so a fresh read from the server counts', async () => {
+    const { player, connection, deps } = make({ voiceChannelId: null });
+    // The cache said "none"; index.ts re-reads the server and the second answer is a room.
+    (deps.voiceChannelOf as ReturnType<typeof vi.fn>).mockResolvedValueOnce('vc7');
+    await player.play('a', ana, 'tc1');
+    await vi.waitFor(() => expect(connection.playCalls).toBe(1));
+    expect(deps.join).toHaveBeenCalledWith('vc7');
   });
 
   it('play with an empty query asks what to play and does not join', async () => {

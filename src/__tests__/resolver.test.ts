@@ -1,6 +1,9 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
-import { isUrl, parseDuration, RESOLVE_TIMEOUT_MS, YtDlpResolver, type SpawnFn } from '../resolver.js';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { FileResolver, isUrl, parseDuration, RESOLVE_TIMEOUT_MS, YtDlpResolver, type SpawnFn } from '../resolver.js';
 
 class FakeStream extends EventEmitter {
   resume(): this {
@@ -138,5 +141,21 @@ describe('YtDlpResolver.open', () => {
     expect(spawn.children[0]!.kill).toHaveBeenCalled();
     expect(spawn.children[1]!.kill).toHaveBeenCalled();
     expect((spawn.children[1]!.stdout as FakeStream).destroy).toHaveBeenCalled();
+  });
+});
+
+describe('FileResolver (MUSIC_TEST_TRACK)', () => {
+  it('turns any query into the one local file, and opens it as a stream', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'music-bot-'));
+    const file = join(dir, 'beeps.ogg');
+    writeFileSync(file, 'OggS-not-really');
+    const resolver = new FileResolver(file);
+
+    const track = await resolver.resolve('  numb - linkin park ', 'ana');
+    expect(track).toEqual({ title: 'teste: numb - linkin park', durationSec: null, url: file, requestedBy: 'ana' });
+
+    const chunks: Buffer[] = [];
+    for await (const chunk of resolver.open(track) as AsyncIterable<Buffer>) chunks.push(chunk);
+    expect(Buffer.concat(chunks).toString()).toBe('OggS-not-really');
   });
 });

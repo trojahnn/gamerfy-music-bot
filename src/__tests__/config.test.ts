@@ -13,7 +13,13 @@ describe('loadConfig', () => {
       ytdlpExtraArgs: [],
       port: 80,
       installUrl: null,
+      testTrack: null,
     });
+  });
+
+  it('MUSIC_TEST_TRACK names the local file every /play resolves to (the proof only); blank is off', () => {
+    expect(loadConfig({ GAMERFY_BOT_TOKEN: 'gfb_x', MUSIC_TEST_TRACK: ' /tmp/beeps.ogg ' }).testTrack).toBe('/tmp/beeps.ogg');
+    expect(loadConfig({ GAMERFY_BOT_TOKEN: 'gfb_x', MUSIC_TEST_TRACK: '   ' }).testTrack).toBeNull();
   });
 
   it('throws without a token', () => {

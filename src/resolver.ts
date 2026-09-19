@@ -3,6 +3,7 @@
 // gives the raw audio, ffmpeg transcodes it to Ogg Opus. Everything
 // YouTube-specific is behind the `Resolver` interface, so swapping YouTube for a
 // licensed source later is a new class, not a rewrite.
+import { createReadStream } from 'node:fs';
 import { spawn } from 'node:child_process';
 
 export interface Track {
@@ -163,4 +164,22 @@ export class YtDlpResolver implements Resolver {
 function lastLine(text: string): string {
   const lines = text.split('\n').map((piece) => piece.trim()).filter((piece) => piece !== '');
   return lines.length === 0 ? '' : (lines[lines.length - 1] as string);
+}
+
+/**
+ * The resolver of the end-to-end proof: every query becomes ONE local Ogg/Opus
+ * file (`MUSIC_TEST_TRACK`), so the proof exercises the whole chain — command,
+ * the asker's room, the join, the audio reaching a listener — without yt-dlp
+ * or the network in the way. Never used in service (config.ts).
+ */
+export class FileResolver implements Resolver {
+  constructor(private readonly path: string) {}
+
+  resolve(query: string, requestedBy: string): Promise<Track> {
+    return Promise.resolve({ title: `teste: ${query.trim()}`, durationSec: null, url: this.path, requestedBy });
+  }
+
+  open(_track: Track): NodeJS.ReadableStream {
+    return createReadStream(this.path);
+  }
 }

@@ -20,6 +20,11 @@ export interface Config {
   port: number;
   /** The Gamerfy install link (`${site}/bot/<clientId>`), or `null` if unset. */
   installUrl: string | null;
+  /**
+   * A local Ogg/Opus file every `/play` resolves to, instead of yt-dlp — for the
+   * end-to-end proof (a deterministic track, no network). `null` in service.
+   */
+  testTrack: string | null;
 }
 
 function requireNonEmpty(value: string | undefined, name: string, hint: string): string {
@@ -44,6 +49,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (prefix === '') throw new Error('MUSIC_PREFIX não pode ser vazio.');
 
   const installUrl = (env.MUSIC_INSTALL_URL ?? '').trim();
+  const testTrack = (env.MUSIC_TEST_TRACK ?? '').trim();
 
   return {
     token,
@@ -55,5 +61,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ytdlpExtraArgs: (env.YTDLP_EXTRA_ARGS ?? '').split(/\s+/).filter((arg) => arg !== ''),
     port: parsePort(env.PORT ?? '80'),
     installUrl: installUrl === '' ? null : installUrl,
+    testTrack: testTrack === '' ? null : testTrack,
   };
 }

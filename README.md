@@ -15,7 +15,23 @@ Por prefixo (padrão `/`, veja `MUSIC_PREFIX`):
 
 | Comando | O que faz |
 | --- | --- |
-| `/play <busca ou URL>` | Busca no YouTube (ou abre a URL), entra na sala de quem pediu e toca; se já toca, entra na fila. Aliases: `/p`, `/tocar`. |
+| `/play <busca ou URL>` | Busca no YouTube (ou abre a URL), entra na sala de quem pediu e toca; se já toca na mesma sala, entra na fila. Aliases: `/p`, `/tocar`. |
+
+O `/play` vale em **qualquer canal de texto** do servidor: a sala é sempre **a de quem
+pediu**, nunca o canal onde o comando foi escrito. As regras, na ordem em que o bot
+as confere (antes de resolver a faixa — ninguém espera o YouTube para ouvir um não):
+
+| Situação | Resposta |
+| --- | --- |
+| Quem pediu não está em sala de voz nenhuma | `Entre numa sala de voz primeiro.` |
+| O bot já toca em **outra** sala do servidor | `Estou ocupado tocando em #<sala>.` — e fica onde está (uma sala por servidor; peça de lá, ou `/stop`). |
+| O bot já toca na **mesma** sala | `Na fila (posição N): …` |
+| Livre | entra na sala de quem pediu e `Tocando agora: …` |
+
+Para saber em que sala a pessoa está, o bot lê o cache do SDK e, se ele disser
+"nenhuma", relê o servidor (`bot.fetchGuild`): o backend confere quem está nas salas
+contra o próprio LiveKit antes de responder, então um `participant_joined` perdido no
+caminho não faz o bot contradizer quem está sentado numa sala.
 | `/skip` | Pula a faixa atual. Aliases: `/s`, `/next`, `/pular`. |
 | `/stop` | Para tudo, esvazia a fila e sai da sala. Aliases: `/leave`, `/sair`, `/parar`. |
 | `/queue` | Mostra a fila. Aliases: `/q`, `/fila`. |
@@ -45,6 +61,7 @@ um `GET /health` que responde `ok` (para o health check do container).
 | `YTDLP_EXTRA_ARGS` | — | Args extras do `yt-dlp` (ex.: `--cookies /caminho`, um PO token) para o anti-bot do YouTube. |
 | `YTDLP_PATH` | `yt-dlp` | Caminho do `yt-dlp`. |
 | `FFMPEG_PATH` | `ffmpeg` | Caminho do `ffmpeg`. |
+| `MUSIC_TEST_TRACK` | — | **Só para a prova de ponta a ponta.** Um `.ogg` (Opus) local que TODA `/play` toca em vez de buscar no YouTube (`scripts/music-bot-e2e` do Gamerfy). Nunca em serviço. |
 
 Veja `.env.example`.
 
@@ -115,3 +132,19 @@ npm run lint
 npm run typecheck
 npm test
 ```
+
+A prova de **ponta a ponta** com este bot de verdade — uma pessoa numa sala, o `/play`
+escrito num canal de texto qualquer, o bot entrando na sala dela e um ouvinte dentro
+da sala ouvindo o áudio; mais as regras de "ocupado em outra sala", "entre numa
+sala" e a fila — mora no monorepo do Gamerfy: `scripts/music-bot-e2e` (leia o README
+de lá; exige a stack local e um backend na 4502).
+
+## Quedas do gateway
+
+A **primeira** conexão insiste até o gateway responder (2 s → 30 s entre tentativas,
+`src/startup.ts`): a página de manutenção de um deploy não vira crash-loop — um
+container que morria aí, esgotava as reinicializações da plataforma e ficava morto
+depois de o backend voltar. Só uma recusa sem volta encerra o processo: token
+inválido/rotacionado, bot aposentado, ou **outra conexão do mesmo token** (4004) —
+nunca rode duas cópias com o mesmo token. Depois de conectado, o SDK reconecta e
+retoma a sessão sozinho (1001 do deploy, 1006 de rede).

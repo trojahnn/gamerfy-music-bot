@@ -6,12 +6,34 @@ import { parseCommand } from './commands.js';
 import { loadConfig } from './config.js';
 import { GuildPlayer } from './player.js';
 import { Players } from './players.js';
-import { YtDlpResolver } from './resolver.js';
+import { FileResolver, YtDlpResolver, type Resolver } from './resolver.js';
+import { connectWithRetry } from './startup.js';
 import { createWebServer } from './web.js';
 
 const config = loadConfig();
 const bot = new Bot({ token: config.token, apiUrl: config.apiUrl });
-const resolver = new YtDlpResolver({ ytdlpPath: config.ytdlpPath, ffmpegPath: config.ffmpegPath, extraArgs: config.ytdlpExtraArgs });
+const resolver: Resolver =
+  config.testTrack === null
+    ? new YtDlpResolver({ ytdlpPath: config.ytdlpPath, ffmpegPath: config.ffmpegPath, extraArgs: config.ytdlpExtraArgs })
+    : new FileResolver(config.testTrack);
+if (config.testTrack !== null) console.log(`[music] MUSIC_TEST_TRACK: toda faixa é ${config.testTrack} (só para a prova)`);
+
+/**
+ * Where the asker is. The cache first; when it says "no room", the server
+ * again — `fetchGuild` makes the backend check who is in the rooms against
+ * LiveKit itself before answering, so a join whose webhook was lost does not
+ * make the bot tell somebody sitting in a room to "join one first".
+ */
+async function voiceChannelOf(guildId: string, userId: string): Promise<string | null> {
+  const cached = bot.voiceChannelOf(guildId, userId);
+  if (cached !== null) return cached;
+  try {
+    await bot.fetchGuild(guildId);
+  } catch (error) {
+    console.error('[music] não consegui reler o servidor', error instanceof Error ? error.message : error);
+  }
+  return bot.voiceChannelOf(guildId, userId);
+}
 
 async function say(channelId: string, text: string): Promise<void> {
   try {
@@ -27,7 +49,8 @@ const players = new Players(
       resolver,
       maxQueue: config.maxQueue,
       join: (channelId) => bot.voice.join(channelId),
-      voiceChannelOf: (userId) => bot.voiceChannelOf(guildId, userId),
+      voiceChannelOf: (userId) => voiceChannelOf(guildId, userId),
+      roomNameOf: (channelId) => bot.guilds.get(guildId)?.channels.get(channelId)?.name ?? null,
       say,
     }),
 );
@@ -81,7 +104,15 @@ bot.on('disconnect', (event) => {
   void bot.destroy().finally(() => process.exit(1));
 });
 
-await bot.connect();
+// Kept trying until the gateway answers — a deploy's maintenance window must
+// not turn into a crash loop (startup.ts). Only a refusal with no way back exits.
+try {
+  await connectWithRetry(bot);
+} catch (error) {
+  console.error('[music] o gateway recusou este bot de vez; saindo', error instanceof Error ? error.message : error);
+  web.close();
+  process.exit(1);
+}
 console.log(`[music] no ar como ${bot.user?.username ?? 'bot'}`);
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

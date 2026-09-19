@@ -14,8 +14,14 @@ export interface PlayerDeps {
   readonly maxQueue: number;
   /** Opens a voice connection to a channel (the SDK's `voice.join`). */
   join(channelId: string): Promise<Connection>;
-  /** The voice channel the user is in, in THIS guild, or `null`. */
-  voiceChannelOf(userId: string): string | null;
+  /**
+   * The voice channel the user is in, in THIS guild, or `null`. Async because
+   * the answer may have to be read fresh from the server when the cache says
+   * "none" (index.ts: `bot.voiceChannelOf`, then `bot.fetchGuild`).
+   */
+  voiceChannelOf(userId: string): Promise<string | null> | string | null;
+  /** The name of a voice room of THIS guild, for "ocupado tocando em #sala"; `null` when unknown. */
+  roomNameOf?(channelId: string): string | null;
   /** Replies in a text channel (the SDK's `messages.send`), never throwing. */
   say(channelId: string, text: string): Promise<void>;
 }
@@ -71,15 +77,40 @@ export class GuildPlayer {
     return this.#queue.length + (this.#current === null ? 0 : 1) >= this.deps.maxQueue;
   }
 
+  /** The room the running loop joined (or is tearing down from), or `null` when idle. */
+  get currentVoiceChannelId(): string | null {
+    return this.#running ? this.#lastVoiceChannelId : null;
+  }
+
+  /**
+   * `/play`, from ANY text channel of the guild: the target room is wherever the
+   * ASKER is right now, never the channel the command was typed in. The rules,
+   * in the order they are checked — before the track is resolved, so nobody
+   * waits on yt-dlp to be told no:
+   *
+   *   1. no query → how to use it;
+   *   2. the asker is in no voice room → "join one first";
+   *   3. the bot is playing in ANOTHER room of this guild → "busy in #room" and
+   *      it stays there (one room per guild; whoever is in the other room asks
+   *      from there, or `/stop`);
+   *   4. same room while playing → queued;
+   *   5. idle → join the asker's room and start.
+   */
   async play(query: string, requester: Requester, channelId: string): Promise<void> {
     this.#announceChannelId = channelId;
     if (query.trim() === '') {
       await this.deps.say(channelId, 'Diga o que tocar. Ex.: `/play numb - linkin park`');
       return;
     }
-    const voiceChannelId = this.deps.voiceChannelOf(requester.id);
+    const voiceChannelId = await this.deps.voiceChannelOf(requester.id);
     if (voiceChannelId === null) {
       await this.deps.say(channelId, 'Entre numa sala de voz primeiro.');
+      return;
+    }
+    const busyIn = this.currentVoiceChannelId;
+    if (busyIn !== null && busyIn !== voiceChannelId) {
+      const name = this.deps.roomNameOf?.(busyIn) ?? null;
+      await this.deps.say(channelId, name === null ? 'Estou ocupado tocando em outra sala.' : `Estou ocupado tocando em #${name}.`);
       return;
     }
     if (this.#atCapacity()) {
